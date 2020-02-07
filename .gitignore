@@ -1,0 +1,12 @@
+.DS_Store
+.idea
+*.pyc
+*.out
+*.so
+*.jsonlines
+logs
+char_vocab*.txt
+glove*.txt
+glove*.txt.filtered
+*.v*_*_conll
+*.hdf5
