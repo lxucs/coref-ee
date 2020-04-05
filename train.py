@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -9,6 +8,9 @@ import time
 import tensorflow as tf
 import util
 import logging
+import numpy as np
+
+
 format = '%(asctime)s - %(levelname)s - %(name)s - %(message)s'
 logging.basicConfig(format=format)
 logger = logging.getLogger(__name__)
@@ -30,12 +32,15 @@ if __name__ == "__main__":
   max_f1 = 0
   mode = 'w'
 
-  with tf.Session() as session:
+  tf_conf = tf.ConfigProto()
+  tf_conf.gpu_options.allow_growth = True
+  with tf.Session(config=tf_conf) as session:
     session.run(tf.global_variables_initializer())
     model.start_enqueue_thread(session)
     accumulated_loss = 0.0
 
-    ckpt = tf.train.get_checkpoint_state(log_dir)
+    # ckpt = tf.train.get_checkpoint_state(log_dir)
+    ckpt = None
     if ckpt and ckpt.model_checkpoint_path:
       print("Restoring from: {}".format(ckpt.model_checkpoint_path))
       saver.restore(session, ckpt.model_checkpoint_path)
@@ -46,7 +51,13 @@ if __name__ == "__main__":
 
     initial_time = time.time()
     while True:
-      tf_loss, tf_global_step, _ = session.run([model.loss, model.global_step, model.train_op])
+      tf_loss, tf_global_step, _, tf_marginalized, tf_log_norm, tf_bert_lr, tf_task_lr = session.run([model.loss, model.global_step, model.train_op,
+                                                model.marginalized_gold_scores, model.log_norm, model.bert_lr, model.task_lr])
+      # print('{}\t{}'.format(tf_marginalized, tf_log_norm))
+      # print(np.sum(tf_log_norm).item())
+      # print(np.sum(tf_marginalized).item())
+      # print(tf_loss)
+      # print('-------')
       accumulated_loss += tf_loss
       # print('tf global_step', tf_global_step)
 
@@ -56,6 +67,7 @@ if __name__ == "__main__":
 
         average_loss = accumulated_loss / report_frequency
         logger.info("[{}] loss={:.2f}, steps/s={:.2f}".format(tf_global_step, average_loss, steps_per_second))
+        # logger.info('bert_lr / task_lr: {} / {}'.format(tf_bert_lr, tf_task_lr))
         writer.add_summary(util.make_summary({"loss": average_loss}), tf_global_step)
         accumulated_loss = 0.0
 

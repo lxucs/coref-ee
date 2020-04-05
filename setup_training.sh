@@ -1,5 +1,6 @@
 #!/bin/bash
 
+source /home/lxu85/virtualenv/coref/bin/activate
 
 ontonotes_path=$1
 data_dir=$2

@@ -23,4 +23,4 @@ if __name__ == "__main__":
   with tf.Session() as session:
     model.restore(session)
     # Make sure eval mode is True if you want official conll results
-    model.evaluate(session, official_stdout=True, eval_mode=True)
+    model.evaluate(session, official_stdout=True, eval_mode=False, visualize=True)

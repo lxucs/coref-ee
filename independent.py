@@ -9,6 +9,7 @@ import json
 import threading
 import numpy as np
 import tensorflow as tf
+import pickle
 
 import util
 import coref_ops
@@ -72,7 +73,7 @@ class CorefModel(object):
                     self.config['num_docs'] * self.config['num_epochs'])
     num_warmup_steps = int(num_train_steps * 0.1)
     self.global_step = tf.train.get_or_create_global_step()
-    self.train_op = optimization.create_custom_optimizer(tvars,
+    self.train_op, self.bert_lr, self.task_lr = optimization.create_custom_optimizer(tvars,
                       self.loss, self.config['bert_learning_rate'], self.config['task_learning_rate'],
                       num_train_steps, num_warmup_steps, False, self.global_step, freeze=-1,
                       task_opt=self.config['task_optimizer'], eps=config['adam_eps'])
@@ -82,7 +83,7 @@ class CorefModel(object):
       train_examples = [json.loads(jsonline) for jsonline in f.readlines()]
     def _enqueue_loop():
       while True:
-        random.shuffle(train_examples)
+        # random.shuffle(train_examples)
         if self.config['single_example']:
           for example in train_examples:
             tensorized_example = self.tensorize_example(example, is_training=True)
@@ -286,6 +287,7 @@ class CorefModel(object):
     # beam size
     k = tf.minimum(3900, tf.to_int32(tf.floor(tf.to_float(num_words) * self.config["top_span_ratio"])))
     c = tf.minimum(self.config["max_top_antecedents"], k)
+    self.k = k
     # pull from beam
     top_span_indices = coref_ops.extract_spans(tf.expand_dims(candidate_mention_scores, 0),
                                                tf.expand_dims(candidate_starts, 0),
@@ -408,9 +410,9 @@ class CorefModel(object):
 
   def softmax_loss(self, antecedent_scores, antecedent_labels):
     gold_scores = antecedent_scores + tf.log(tf.to_float(antecedent_labels)) # [k, max_ant + 1]
-    marginalized_gold_scores = tf.reduce_logsumexp(gold_scores, [1]) # [k]
-    log_norm = tf.reduce_logsumexp(antecedent_scores, [1]) # [k]
-    return log_norm - marginalized_gold_scores # [k]
+    self.marginalized_gold_scores = tf.reduce_logsumexp(gold_scores, [1]) # [k]
+    self.log_norm = tf.reduce_logsumexp(antecedent_scores, [1]) # [k]
+    return self.log_norm - self.marginalized_gold_scores # [k]
 
   def bucket_distance(self, distances):
     """
@@ -534,7 +536,7 @@ class CorefModel(object):
       num_words = sum(tensorized_example[2].sum() for tensorized_example, _ in self.eval_data)
       print("Loaded {} eval examples.".format(len(self.eval_data)))
 
-  def evaluate(self, session, global_step=None, official_stdout=False, keys=None, eval_mode=False):
+  def evaluate(self, session, global_step=None, official_stdout=False, keys=None, eval_mode=False, visualize=False):
     self.load_eval_data()
 
     coref_predictions = {}
@@ -542,6 +544,7 @@ class CorefModel(object):
     losses = []
     doc_keys = []
     num_evaluated= 0
+    visualize_list = []
 
     for example_num, (tensorized_example, example) in enumerate(self.eval_data):
       _, _, _, _, _, _, gold_starts, gold_ends, _, _ = tensorized_example
@@ -559,6 +562,25 @@ class CorefModel(object):
       if example_num % 10 == 0:
         print("Evaluated {}/{} examples.".format(example_num + 1, len(self.eval_data)))
 
+      # Visualize antecedents
+      if visualize:
+        print('*****New Doc*****')
+        subtokens = util.flatten(example['sentences'])
+        span_list, antecedent_list = [], []
+        for idx, antecedent_idx in enumerate(predicted_antecedents):
+          if antecedent_idx == -1:
+            continue
+          span_subtoken_idx = (top_span_starts[idx], top_span_ends[idx])
+          span_str = ' '.join(subtokens[span_subtoken_idx[0]: span_subtoken_idx[1] + 1])
+
+          antecedent_subtoken_idx = (top_span_starts[antecedent_idx], top_span_ends[antecedent_idx])
+          antecedent_str = ' '.join(subtokens[antecedent_subtoken_idx[0]: antecedent_subtoken_idx[1] + 1])
+
+          # print('%s ---> %s' % (span_str, antecedent_str))
+          span_list.append(span_str)
+          antecedent_list.append(antecedent_str)
+        visualize_list.append((span_list, antecedent_list))
+
     summary_dict = {}
     if eval_mode:
       conll_results = conll.evaluate_conll(self.config["conll_eval_path"], coref_predictions, self.subtoken_maps, official_stdout )
@@ -573,5 +595,10 @@ class CorefModel(object):
     print("Average precision (py): {:.2f}%".format(p * 100))
     summary_dict["Average recall (py)"] = r
     print("Average recall (py): {:.2f}%".format(r * 100))
+
+    if visualize:
+      with open('visualize.bin', 'wb') as f:
+        pickle.dump(visualize_list, f)
+      print('Saved visialized')
 
     return util.make_summary(summary_dict), f

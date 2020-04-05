@@ -96,4 +96,4 @@ def create_custom_optimizer(tvars, loss, bert_init_lr, task_init_lr, num_train_s
     train_op = tf.group(bert_train_op, task_train_op, [global_step.assign(new_global_step)])
   else:
     train_op = tf.group(bert_train_op, task_train_op)
-  return train_op
+  return train_op, bert_learning_rate, task_learning_rate
