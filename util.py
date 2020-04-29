@@ -8,13 +8,36 @@ import codecs
 import collections
 import shutil
 import sys
+import random
 
 import numpy as np
 import tensorflow as tf
 import pyhocon
+from datetime import datetime
 
 import independent
 import overlap
+
+
+def compute_p_m_entity(p_m_link, k):
+  p_m_entity = tf.concat([[[1.]], tf.zeros([1, k - 1])], 1)
+
+  def _time_step(i, p_m_entity):
+    p_m_e = p_m_entity[:, :i]  # [i, i]  x[i, j] = p(m_i \in E_j)
+    p_m_link_i = p_m_link[i:i + 1, :i]  # [1, i]  x[0, j] = p(a_i = j)
+    p_m_e_i = tf.matmul(p_m_link_i, p_m_e)  # [1, i]  x[0, j] = \sum_k (p(a_i = k) * p(m_k \in E_j))
+    p_m_e_i = tf.concat([p_m_e_i, p_m_link[i:i + 1, i:i + 1]], 1)
+    p_m_e_i = tf.pad(p_m_e_i, [[0, 0], [0, k - i - 1]], mode='CONSTANT')
+    p_m_entity = tf.concat([p_m_entity, p_m_e_i], 0)
+    return i + 1, p_m_entity
+
+  _, p_m_entity = tf.while_loop(cond=lambda i, *_: tf.less(i, k),
+                                body=_time_step,
+                                loop_vars=(tf.constant(1), p_m_entity),
+                                shape_invariants=(tf.TensorShape([]), tf.TensorShape([None, None])))
+
+  return p_m_entity
+
 
 def get_model(config):
     if config['model_type'] == 'independent':
@@ -27,16 +50,27 @@ def get_model(config):
 def initialize_from_env(eval_test=False):
   # if "GPU" in os.environ:
   #   set_gpus(int(os.environ["GPU"]))
-  set_gpus(2)
+  set_gpus(int(sys.argv[2]))
 
   name = sys.argv[1]
   print("Running experiment: {}".format(name))
+
+  seed = None
+  if seed:
+    print('Set seed to %d' % seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    tf.set_random_seed(seed)
 
   if eval_test:
     config = pyhocon.ConfigFactory.parse_file("test.experiments.conf")[name]
   else:
     config = pyhocon.ConfigFactory.parse_file("experiments.conf")[name]
-  config["log_dir"] = mkdirs(os.path.join(config["log_root"], name))
+
+  # name_suffix = datetime.now().strftime('%b%d_%H-%M-%S')
+  # name += '_%s' % name_suffix
+  # config["log_dir"] = mkdirs(os.path.join(config["log_root"], name))
+  config["log_dir"] = config["log_root"]
 
   print(pyhocon.HOCONConverter.convert(config, "hocon"))
   return config
@@ -95,6 +129,9 @@ def shape(x, dim):
 def ffnn(inputs, num_hidden_layers, hidden_size, output_size, dropout, output_weights_initializer=tf.truncated_normal_initializer(stddev=0.02), hidden_initializer=tf.truncated_normal_initializer(stddev=0.02)):
   if len(inputs.get_shape()) > 3:
     raise ValueError("FFNN with rank {} not supported".format(len(inputs.get_shape())))
+
+  output_weights_initializer = tf.constant_initializer(0.03)
+  hidden_initializer = tf.constant_initializer(0.03)
 
   if len(inputs.get_shape()) == 3:
     batch_size = shape(inputs, 0)

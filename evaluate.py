@@ -7,6 +7,12 @@ import os
 
 import tensorflow as tf
 import util
+import logging
+
+format = '%(asctime)s - %(levelname)s - %(name)s - %(message)s'
+logging.basicConfig(format=format)
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 def read_doc_keys(fname):
     keys = set()
@@ -23,4 +29,4 @@ if __name__ == "__main__":
   with tf.Session() as session:
     model.restore(session)
     # Make sure eval mode is True if you want official conll results
-    model.evaluate(session, official_stdout=True, eval_mode=False, visualize=True)
+    model.evaluate(session, official_stdout=True, eval_mode=True, visualize=False)
