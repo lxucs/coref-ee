@@ -67,10 +67,9 @@ def initialize_from_env(eval_test=False):
   else:
     config = pyhocon.ConfigFactory.parse_file("experiments.conf")[name]
 
-  # name_suffix = datetime.now().strftime('%b%d_%H-%M-%S')
-  # name += '_%s' % name_suffix
-  # config["log_dir"] = mkdirs(os.path.join(config["log_root"], name))
-  config["log_dir"] = config["log_root"]
+  name_suffix = datetime.now().strftime('%b%d_%H-%M-%S')
+  name += '_%s' % name_suffix
+  config["log_dir"] = mkdirs(os.path.join(config["log_root"], name))
 
   print(pyhocon.HOCONConverter.convert(config, "hocon"))
   return config
@@ -130,8 +129,8 @@ def ffnn(inputs, num_hidden_layers, hidden_size, output_size, dropout, output_we
   if len(inputs.get_shape()) > 3:
     raise ValueError("FFNN with rank {} not supported".format(len(inputs.get_shape())))
 
-  output_weights_initializer = tf.constant_initializer(0.03)
-  hidden_initializer = tf.constant_initializer(0.03)
+  # output_weights_initializer = tf.constant_initializer(0.03)
+  # hidden_initializer = tf.constant_initializer(0.03)  # For debug
 
   if len(inputs.get_shape()) == 3:
     batch_size = shape(inputs, 0)
