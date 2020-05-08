@@ -82,13 +82,15 @@ if __name__ == "__main__":
         writer.add_summary(util.make_summary({"loss": average_loss}), tf_global_step)
         accumulated_loss = 0.0
 
-      if tf_global_step  > 0 and tf_global_step % eval_frequency == 0:
-        saver.save(session, os.path.join(log_dir, "model"), global_step=tf_global_step)
+      if tf_global_step > 0 and tf_global_step % eval_frequency == 0:
+        if tf_global_step > 40000:
+          saver.save(session, os.path.join(log_dir, "model"), global_step=tf_global_step)
         eval_summary, eval_f1 = model.evaluate(session, tf_global_step)
 
         if eval_f1 > max_f1:
           max_f1 = eval_f1
-          util.copy_checkpoint(os.path.join(log_dir, "model-{}".format(tf_global_step)), os.path.join(log_dir, "model.max.ckpt"))
+          if tf_global_step > 40000:
+            util.copy_checkpoint(os.path.join(log_dir, "model-{}".format(tf_global_step)), os.path.join(log_dir, "model.max.ckpt"))
 
         writer.add_summary(eval_summary, tf_global_step)
         writer.add_summary(util.make_summary({"max_eval_f1": max_f1}), tf_global_step)
