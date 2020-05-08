@@ -305,7 +305,7 @@ class CorefModel(object):
 
 
     # beam size
-    k = tf.minimum(750, tf.to_int32(tf.floor(tf.to_float(num_words) * self.config["top_span_ratio"])))
+    k = tf.minimum(400, tf.to_int32(tf.floor(tf.to_float(num_words) * self.config["top_span_ratio"])))
     c = tf.minimum(self.config["max_top_antecedents"], k)
     # pull from beam
     top_span_indices = coref_ops.extract_spans(tf.expand_dims(candidate_mention_scores, 0),
