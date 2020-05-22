@@ -33,6 +33,7 @@ class CorefModel(object):
     self.subtoken_maps = {}
     self.gold = {}
     self.eval_data = None # Load eval data lazily.
+    self.eval_test_data = None
     self.bert_config = modeling.BertConfig.from_json_file(config["bert_config_file"])
     self.tokenizer = tokenization.FullTokenizer(
                 vocab_file=config['vocab_file'], do_lower_case=False)
@@ -554,7 +555,6 @@ class CorefModel(object):
       raise ValueError("Unsupported rank: {}".format(emb_rank))
     return tf.boolean_mask(flattened_emb, tf.reshape(text_len_mask, [num_sentences * max_sentence_length]))
 
-
   def get_predicted_antecedents(self, antecedents, antecedent_scores):
     predicted_antecedents = []
     for i, index in enumerate(np.argmax(antecedent_scores, axis=1) - 1):
@@ -599,15 +599,27 @@ class CorefModel(object):
     evaluator.update(predicted_clusters, gold_clusters, mention_to_predicted, mention_to_gold)
     return predicted_clusters
 
-  def load_eval_data(self):
-    if self.eval_data is None:
-      def load_line(line):
-        example = json.loads(line)
-        return self.tensorize_example(example, is_training=False), example
-      with open(self.config["eval_path"]) as f:
-        self.eval_data = [load_line(l) for l in f.readlines()]
-      num_words = sum(tensorized_example[2].sum() for tensorized_example, _ in self.eval_data)
-      print("Loaded {} eval examples.".format(len(self.eval_data)))
+  def load_eval_data(self, test=False):
+    if test is False:
+      if self.eval_data is None:
+        def load_line(line):
+          example = json.loads(line)
+          return self.tensorize_example(example, is_training=False), example
+
+        with open(self.config["eval_path"]) as f:
+          self.eval_data = [load_line(l) for l in f.readlines()]
+        num_words = sum(tensorized_example[2].sum() for tensorized_example, _ in self.eval_data)
+        print("Loaded {} eval examples.".format(len(self.eval_data)))
+    else:
+      if self.eval_test_data is None:
+        def load_line(line):
+          example = json.loads(line)
+          return self.tensorize_example(example, is_training=False), example
+
+        with open(self.config["eval_test_path"]) as f:
+          self.eval_test_data = [load_line(l) for l in f.readlines()]
+        num_words = sum(tensorized_example[2].sum() for tensorized_example, _ in self.eval_test_data)
+        print("Loaded {} eval examples.".format(len(self.eval_test_data)))
 
   def evaluate(self, session, global_step=None, official_stdout=False, keys=None, eval_mode=False, visualize=False):
     self.load_eval_data()
@@ -631,7 +643,8 @@ class CorefModel(object):
       # losses.append(session.run(self.loss, feed_dict=feed_dict))
       losses.append(loss)
       predicted_antecedents = self.get_predicted_antecedents(top_antecedents, top_antecedent_scores)
-      coref_predictions[example["doc_key"]] = self.evaluate_coref(top_span_starts, top_span_ends, predicted_antecedents, example["clusters"], coref_evaluator)
+      predicted_clusters = self.evaluate_coref(top_span_starts, top_span_ends, predicted_antecedents, example["clusters"], coref_evaluator)
+      coref_predictions[example["doc_key"]] = predicted_clusters
       # if example_num % 10 == 0:
       #   print("Evaluated {}/{} examples.".format(example_num + 1, len(self.eval_data)))
 
@@ -675,3 +688,64 @@ class CorefModel(object):
       logger.info('Saved visialized')
 
     return util.make_summary(summary_dict), f
+
+  def evaluate_test(self, session, global_step=None, official_stdout=False, keys=None, eval_mode=False):
+    self.load_eval_data(test=True)
+
+    coref_predictions = {}
+    coref_evaluator = metrics.CorefEvaluator()
+    losses = []
+    doc_keys = []
+    num_evaluated= 0
+
+    for example_num, (tensorized_example, example) in enumerate(self.eval_test_data):
+      _, _, _, _, _, _, gold_starts, gold_ends, _, _ = tensorized_example
+      feed_dict = {i:t for i,t in zip(self.input_tensors, tensorized_example)}
+      # if tensorized_example[0].shape[0] <= 9:
+      if keys is not None and example['doc_key'] not in keys:
+        # print('Skipping...', example['doc_key'], tensorized_example[0].shape)
+        continue
+      doc_keys.append(example['doc_key'])
+      loss, (candidate_starts, candidate_ends, candidate_mention_scores, top_span_starts, top_span_ends, top_antecedents, top_antecedent_scores) = session.run([self.loss, self.predictions], feed_dict=feed_dict)
+      # losses.append(session.run(self.loss, feed_dict=feed_dict))
+      losses.append(loss)
+      predicted_antecedents = self.get_predicted_antecedents(top_antecedents, top_antecedent_scores)
+      predicted_clusters = self.evaluate_coref(top_span_starts, top_span_ends, predicted_antecedents, example["clusters"], coref_evaluator)
+      coref_predictions[example["doc_key"]] = predicted_clusters
+      # if example_num % 10 == 0:
+      #   print("Evaluated {}/{} examples.".format(example_num + 1, len(self.eval_data)))
+
+    summary_dict = {}
+    if eval_mode:
+      conll_results = conll.evaluate_conll(self.config["conll_eval_test_path"], coref_predictions, self.subtoken_maps, official_stdout )
+      average_f1 = sum(results["f"] for results in conll_results.values()) / len(conll_results)
+      summary_dict["Average F1 (conll)"] = average_f1
+      print("Average F1 (conll): {:.2f}%".format(average_f1))
+
+    p,r,f = coref_evaluator.get_prf()
+    summary_dict["Average F1 (py)"] = f
+    logger.info("Average F1 (py): {:.2f}% on {} docs".format(f * 100, len(doc_keys)))
+    summary_dict["Average precision (py)"] = p
+    logger.info("Average precision (py): {:.2f}%".format(p * 100))
+    summary_dict["Average recall (py)"] = r
+    logger.info("Average recall (py): {:.2f}%".format(r * 100))
+
+    return util.make_summary(summary_dict), f
+
+  def predict_test(self, session):
+    self.load_eval_data(test=True)
+
+    predicted_spans, predicted_antecedents, predicted_clusters = [], [], []
+    for example_num, (tensorized_example, example) in enumerate(self.eval_test_data):
+      _, _, _, _, _, _, gold_starts, gold_ends, _, _ = tensorized_example
+      feed_dict = {i:t for i,t in zip(self.input_tensors, tensorized_example)}
+      _, (candidate_starts, candidate_ends, candidate_mention_scores, top_span_starts, top_span_ends, top_antecedents, top_antecedent_scores) = session.run([self.loss, self.predictions], feed_dict=feed_dict)
+      antecedents = self.get_predicted_antecedents(top_antecedents, top_antecedent_scores)
+      clusters, mention_to_predicted = self.get_predicted_clusters(top_span_starts, top_span_ends, antecedents)
+
+      spans = [(span_start, span_end) for span_start, span_end in zip(top_span_starts, top_span_ends)]
+      predicted_spans.append(spans)
+      predicted_antecedents.append(antecedents)
+      predicted_clusters.append(clusters)
+
+    return predicted_clusters, predicted_spans, predicted_antecedents

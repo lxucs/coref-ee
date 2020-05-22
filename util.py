@@ -47,7 +47,7 @@ def get_model(config):
     else:
         raise NotImplementedError('Undefined model type')
 
-def initialize_from_env(eval_test=False):
+def initialize_from_env(eval_test=False, name_suffix=None):
   # if "GPU" in os.environ:
   #   set_gpus(int(os.environ["GPU"]))
   set_gpus(int(sys.argv[2]))
@@ -67,8 +67,30 @@ def initialize_from_env(eval_test=False):
   else:
     config = pyhocon.ConfigFactory.parse_file("experiments.conf")[name]
 
-  name_suffix = datetime.now().strftime('%b%d_%H-%M-%S')
+  if name_suffix is None:
+    name_suffix = datetime.now().strftime('%b%d_%H-%M-%S')
   name += '_%s' % name_suffix
+  config["log_dir"] = mkdirs(os.path.join(config["log_root"], name))
+
+  print(pyhocon.HOCONConverter.convert(config, "hocon"))
+  return config
+
+def initialize_from_env_2(config_name, saved_suffix):
+  name = config_name
+  print("Running experiment: {}".format(name))
+
+  seed = None
+  if seed:
+    print('Set seed to %d' % seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    tf.set_random_seed(seed)
+
+  config = pyhocon.ConfigFactory.parse_file("experiments.conf")[name]
+
+  if saved_suffix is None:
+    saved_suffix = datetime.now().strftime('%b%d_%H-%M-%S')
+  name += '_%s' % saved_suffix
   config["log_dir"] = mkdirs(os.path.join(config["log_root"], name))
 
   print(pyhocon.HOCONConverter.convert(config, "hocon"))

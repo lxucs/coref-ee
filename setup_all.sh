@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build custom kernels.
-source /home/lxu85/virtualenv/coref/bin/activate
+# source /home/lxu85/virtualenv/coref/bin/activate
 
 TF_CFLAGS=( $(python -c 'import tensorflow as tf; print(" ".join(tf.sysconfig.get_compile_flags()))') )
 TF_LFLAGS=( $(python -c 'import tensorflow as tf; print(" ".join(tf.sysconfig.get_link_flags()))') )

@@ -22,11 +22,20 @@ def read_doc_keys(fname):
     return keys
 
 if __name__ == "__main__":
-  config = util.initialize_from_env()
+  # Eval dev
+  # config = util.initialize_from_env()
+  # model = util.get_model(config)
+  # saver = tf.train.Saver()
+  # with tf.Session() as session:
+  #   model.restore(session)
+  #   # Make sure eval mode is True if you want official conll results
+  #   model.evaluate(session, official_stdout=True, eval_mode=True, visualize=False)
+
+  # Eval test
+  config = util.initialize_from_env(name_suffix='May14_06-10-51')
   model = util.get_model(config)
   saver = tf.train.Saver()
-  log_dir = config["log_dir"]
   with tf.Session() as session:
-    model.restore(session)
-    # Make sure eval mode is True if you want official conll results
-    model.evaluate(session, official_stdout=True, eval_mode=True, visualize=False)
+      model.restore(session)
+      # Make sure eval mode is True if you want official conll results
+      model.evaluate_test(session, official_stdout=True, eval_mode=True, visualize=False)
