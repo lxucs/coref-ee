@@ -8,6 +8,7 @@ import tensorflow as tf
 
 singular_pronouns = ['i', 'me', 'my', 'mine', 'myself', 'he', 'him', 'his', 'himself', 'she', 'her', 'hers', 'herself', 'it', 'its', 'itself']
 plural_pronouns = ['they', 'them', 'their', 'theirs', 'themselves', 'we', 'us', 'our', 'ours', 'ourselves']
+valid_pronouns = singular_pronouns + plural_pronouns + ['you', 'your', 'yours', 'yourself', 'yourselves']
 
 
 def get_prediction_path(config, config_name, saved_suffix):
@@ -122,6 +123,7 @@ def analyze(config_name, saved_suffix):
 
     # Get antecedent stats
     fl, fn, wl, correct = 0, 0, 0, 0  # False Link, False New, Wrong Link
+    s_to_p, p_to_s = 0, 0
     num_non_gold, num_total_spans = 0, 0
     for i, antecedents in enumerate(predicted_antecedents):
         antecedents = [(-1, -1) if a == -1 else predicted_spans[i][a] for a in antecedents]
@@ -129,6 +131,21 @@ def analyze(config_name, saved_suffix):
             span = predicted_spans[i][j]
             span_cluster_id = gold_to_cluster_id[i][span]
             num_total_spans += 1
+
+            if antecedent == (-1, -1):
+                continue
+
+            # Only look at stats of pronouns
+            span_text = ' '.join(subtoken_list[i][span[0]: span[1] + 1]).lower()
+            antecedent_text = ' '.join(subtoken_list[i][antecedent[0]: antecedent[1] + 1]).lower()
+            if span_text not in valid_pronouns or antecedent_text not in valid_pronouns:
+                continue
+
+            if span_text in singular_pronouns and antecedent_text in plural_pronouns:
+                s_to_p += 1
+            elif span_text in plural_pronouns and antecedent_text in singular_pronouns:
+                p_to_s += 1
+
             if span_cluster_id == 0:  # Non-gold span
                 num_non_gold += 1
                 if antecedent == (-1, -1):
@@ -149,11 +166,13 @@ def analyze(config_name, saved_suffix):
                     correct += 1
     print('# gold/total spans: %d/%d' % (num_total_spans - num_non_gold, num_total_spans))
     print('# FL: %d FN: %d WL: %d CORRECT %d' % (fl, fn, wl, correct))
-    return num_clusters, num_singular_clusters, num_plural_clusters, num_mixed_clusters, fl, fn, wl, correct, num_non_gold, num_total_spans
+    print('# S to P: %d; P to S: %d' % (s_to_p, p_to_s))
+    return num_clusters, num_singular_clusters, num_plural_clusters, num_mixed_clusters, fl, fn, wl, correct, \
+           num_non_gold, num_total_spans, s_to_p, p_to_s
 
 
 if __name__ == '__main__':
-    gpu_id = 7
+    gpu_id = 6
     util.set_gpus(gpu_id)
 
     experiments = [('train_spanbert_large_ee', 'May14_06-02-15'),
@@ -174,4 +193,4 @@ if __name__ == '__main__':
 
     results_final = [r / len(experiments) for r in results_final]
     print('Avg: # clusters: %.3f; # singular clusters: %.3f; # plural clusters: %.3f; # mixed clusters: %.3f; '
-          'FL %.3f; FN: %.3f; WL: %.3f; CORRECT %.3f; # gold spans: %.3f; # total spans: %.3f' % (*results_final,))
+          'FL %.3f; FN: %.3f; WL: %.3f; CORRECT %.3f; # gold spans: %.3f; # total spans: %.3f; # S to P: %.3f; # P to S: %.3f' % (*results_final,))

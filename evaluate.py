@@ -37,5 +37,4 @@ if __name__ == "__main__":
   saver = tf.train.Saver()
   with tf.Session() as session:
       model.restore(session)
-      # Make sure eval mode is True if you want official conll results
-      model.evaluate_test(session, official_stdout=True, eval_mode=True, visualize=False)
+      model.evaluate_test(session, official_stdout=True, eval_mode=True)
