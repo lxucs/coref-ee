@@ -6,9 +6,10 @@ import os
 from collections import defaultdict
 import tensorflow as tf
 
-singular_pronouns = ['i', 'me', 'my', 'mine', 'myself', 'he', 'him', 'his', 'himself', 'she', 'her', 'hers', 'herself', 'it', 'its', 'itself']
-plural_pronouns = ['they', 'them', 'their', 'theirs', 'themselves', 'we', 'us', 'our', 'ours', 'ourselves']
-valid_pronouns = singular_pronouns + plural_pronouns + ['you', 'your', 'yours', 'yourself', 'yourselves']
+singular_pronouns = ['i', 'me', 'my', 'mine', 'myself', 'he', 'him', 'his', 'himself', 'she', 'her', 'hers', 'herself', 'it', 'its', 'itself', 'yourself']
+plural_pronouns = ['they', 'them', 'their', 'theirs', 'themselves', 'we', 'us', 'our', 'ours', 'ourselves', 'yourselves']
+ambiguous_pronouns = ['you', 'your', 'yours']
+valid_pronouns = singular_pronouns + plural_pronouns + ambiguous_pronouns
 
 
 def get_prediction_path(config, config_name, saved_suffix):
@@ -62,7 +63,7 @@ def get_original_samples(config):
 
 def check_singular_plural_cluster(cluster):
     """ Cluster with text """
-    singular, plural = False, False
+    singular, plural, contain_ambiguous = False, False, False
     for m in cluster:
         if singular and plural:
             break
@@ -71,7 +72,12 @@ def check_singular_plural_cluster(cluster):
             singular = (m in singular_pronouns)
         if not plural:
             plural = (m in plural_pronouns)
-    return singular, plural
+    for m in cluster:
+        m = m.lower()
+        if m in ambiguous_pronouns:
+            contain_ambiguous = True
+            break
+    return singular, plural, contain_ambiguous
 
 
 def analyze(config_name, saved_suffix):
@@ -91,21 +97,20 @@ def analyze(config_name, saved_suffix):
         cluster_list.append([[' '.join(subtokens[m[0]: m[1] + 1]) for m in c] for c in predicted_clusters[i]])
 
     # Get cluster stats
-    num_clusters, num_singular_clusters, num_plural_clusters, num_mixed_clusters = 0, 0, 0, 0
+    num_clusters, num_singular_clusters, num_plural_clusters, num_mixed_clusters, num_mixed_ambiguous = 0, 0, 0, 0, 0
     for clusters in cluster_list:
         # print(clusters)
         for c in clusters:
-            singular, plural = check_singular_plural_cluster(c)
+            singular, plural, contain_ambiguous = check_singular_plural_cluster(c)
             num_clusters += 1
             if singular and plural:
                 num_mixed_clusters += 1
+                if contain_ambiguous:
+                    num_mixed_ambiguous += 1
             if singular:
                 num_singular_clusters += 1
             if plural:
                 num_plural_clusters += 1
-
-    print('num_clusters: %d, num_singular_clusters: %d, num_plural_clusters: %d, num_mixed_clusters: %d'
-          % (num_clusters, num_singular_clusters, num_plural_clusters, num_mixed_clusters))
 
     # Get gold clusters
     gold_to_cluster_id = []  # 0 means not in cluster
@@ -164,10 +169,8 @@ def analyze(config_name, saved_suffix):
                     wl += 1
                 else:
                     correct += 1
-    print('# gold/total spans: %d/%d' % (num_total_spans - num_non_gold, num_total_spans))
-    print('# FL: %d FN: %d WL: %d CORRECT %d' % (fl, fn, wl, correct))
-    print('# S to P: %d; P to S: %d' % (s_to_p, p_to_s))
-    return num_clusters, num_singular_clusters, num_plural_clusters, num_mixed_clusters, fl, fn, wl, correct, \
+
+    return num_clusters, num_singular_clusters, num_plural_clusters, num_mixed_clusters, num_mixed_ambiguous, fl, fn, wl, correct, \
            num_non_gold, num_total_spans, s_to_p, p_to_s
 
 
@@ -192,5 +195,5 @@ if __name__ == '__main__':
         #       'FL %d; FN: %d; WL: %d; CORRECT %d; # gold spans: %d; # total spans: %d' % (*experiment, *results))
 
     results_final = [r / len(experiments) for r in results_final]
-    print('Avg: # clusters: %.3f; # singular clusters: %.3f; # plural clusters: %.3f; # mixed clusters: %.3f; '
+    print('Avg: # clusters: %.3f; # singular clusters: %.3f; # plural clusters: %.3f; # mixed clusters: %.3f; # mixed with ambiguous: %.3f; '
           'FL %.3f; FN: %.3f; WL: %.3f; CORRECT %.3f; # gold spans: %.3f; # total spans: %.3f; # S to P: %.3f; # P to S: %.3f' % (*results_final,))

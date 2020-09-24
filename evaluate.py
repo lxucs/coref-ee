@@ -32,7 +32,7 @@ if __name__ == "__main__":
   #   model.evaluate(session, official_stdout=True, eval_mode=True, visualize=False)
 
   # Eval test
-  config = util.initialize_from_env(name_suffix='May14_06-10-51')
+  config = util.initialize_from_env(name_suffix='May14_06-02-15')
   model = util.get_model(config)
   saver = tf.train.Saver()
   with tf.Session() as session:
